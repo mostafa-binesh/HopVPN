@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HopPort</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #1d2939; background: #f5f7fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px 18px; }
+    main { max-width: 800px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -.03em; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .brand img { width: 46px; height: 46px; object-fit: contain; }
+    h2 { margin: 0 0 16px; font-size: 17px; }
+    p { line-height: 1.5; }
+    .muted { color: #667085; margin: 0 0 24px; }
+    .card { background: white; border: 1px solid #e4e7ec; border-radius: 14px; padding: 22px; margin-bottom: 18px; box-shadow: 0 2px 8px #1d293908; }
+    .address { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 10px 0; }
+    .address span { min-width: 65px; color: #667085; font-size: 14px; }
+    code { font: 14px ui-monospace, SFMono-Regular, Consolas, monospace; background: #f2f4f7; border-radius: 6px; padding: 7px 9px; overflow-wrap: anywhere; }
+    button { border: 1px solid #d0d5dd; border-radius: 8px; padding: 9px 12px; background: white; color: #344054; font: inherit; font-size: 14px; cursor: pointer; }
+    button:hover { background: #f9fafb; }
+    button:disabled { opacity: .55; cursor: default; }
+    button.primary { background: #155eef; color: white; border-color: #155eef; }
+    button.primary:hover { background: #004eeb; }
+    button.danger { color: #b42318; }
+    label { display: block; color: #344054; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+    input { width: 100%; padding: 11px 12px; border-radius: 8px; border: 1px solid #d0d5dd; font: inherit; font-size: 14px; }
+    input:focus { border-color: #155eef; outline: 2px solid #155eef33; }
+    form button { margin-top: 15px; }
+    .hint { color: #667085; font-size: 13px; margin: 8px 0 0; }
+    .proxy { border: 1px solid #e4e7ec; border-radius: 10px; padding: 15px; margin-top: 10px; }
+    .proxy-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .proxy-name { font-weight: 650; overflow-wrap: anywhere; }
+    .badge { background: #d1e9ff; color: #175cd3; border-radius: 999px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+    .badge.error { background: #fee4e2; color: #b42318; }
+    .proxy-detail { color: #667085; font-size: 13px; margin: 6px 0 11px; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .port-control { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+    .port-control input { width: 118px; }
+    .relay-control { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+    .relay-control input { flex: 1; min-width: 230px; }
+    .test-result { margin-top: 10px; font-size: 13px; color: #344054; overflow-wrap: anywhere; }
+    #message { min-height: 24px; margin: 5px 0 14px; color: #344054; }
+    #message.error { color: #b42318; }
+    .empty { color: #667085; margin: 0; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="/logo.png" alt=""><h1>HopPort</h1></div>
+  <p class="muted">Give each upstream proxy its own localhost exit port. All configured ports can run at the same time.</p>
+
+  <section class="card">
+    <h2>Add an upstream proxy</h2>
+    <form id="add-form">
+      <label for="name">Name</label>
+      <input id="name" name="name" placeholder="Optional label" maxlength="80" autocomplete="off">
+      <label for="url">Proxy URL</label>
+      <input id="url" name="url" type="text" placeholder="http://username:password@host:port" required autocomplete="off" spellcheck="false">
+      <label for="relay">Connect through another relay (optional)</label>
+      <input id="relay" name="relay" type="text" placeholder="localhost:10808" autocomplete="off" spellcheck="false">
+      <p class="hint">A bare host:port uses SOCKS5. You can also enter socks5:// or http://. When set, a failed relay will not fall back to a direct connection.</p>
+      <label for="exit-port">Local exit port</label>
+      <input id="exit-port" name="exit-port" type="number" min="1" max="65535" placeholder="e.g. 12235" required>
+      <p class="hint">HTTP upstream proxies are supported. Credentials are saved locally and hidden from the list.</p>
+      <button class="primary" type="submit">Add proxy</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Saved proxies</h2>
+    <p id="message" role="status" aria-live="polite"></p>
+    <div id="list"></div>
+  </section>
+</main>
+<script>
+  const list = document.getElementById('list');
+  const message = document.getElementById('message');
+  let state = null;
+
+  function showMessage(text, error = false) {
+    message.textContent = text;
+    message.className = error ? 'error' : '';
+  }
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: options.body ? { 'Content-Type': 'application/json' } : {},
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  function button(label, onClick, extraClass = '') {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = label;
+    element.className = extraClass;
+    element.addEventListener('click', onClick);
+    return element;
+  }
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showMessage('Local proxy address copied.');
+    } catch { showMessage('Copy failed. Select the address and copy it manually.', true); }
+  }
+
+  function render() {
+    list.replaceChildren();
+    if (state.proxies.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = 'No proxies saved yet.';
+      list.append(empty);
+      return;
+    }
+    for (const proxy of state.proxies) {
+      const item = document.createElement('div');
+      item.className = 'proxy';
+      const head = document.createElement('div');
+      head.className = 'proxy-head';
+      const name = document.createElement('span');
+      name.className = 'proxy-name';
+      name.textContent = proxy.name;
+      head.append(name);
+      const badge = document.createElement('span');
+      badge.className = proxy.status === 'listening' ? 'badge' : 'badge error';
+      badge.textContent = proxy.status === 'listening' ? 'Listening' : proxy.status;
+      head.append(badge);
+      const detail = document.createElement('div');
+      detail.className = 'proxy-detail';
+      detail.textContent = `Upstream: ${proxy.address}`;
+      const relayStatus = document.createElement('div');
+      relayStatus.className = 'proxy-detail';
+      relayStatus.textContent = `Relay: ${proxy.relay || 'none'}`;
+      const addresses = document.createElement('div');
+      if (proxy.exitPort && proxy.status === 'listening') {
+        for (const [type, scheme] of [['HTTP', 'http'], ['SOCKS5', 'socks5']]) {
+          const address = `${scheme}://127.0.0.1:${proxy.exitPort}`;
+          const row = document.createElement('div');
+          row.className = 'address';
+          const label = document.createElement('span');
+          label.textContent = type;
+          const code = document.createElement('code');
+          code.textContent = address;
+          row.append(label, code, button('Copy', () => copy(address)));
+          addresses.append(row);
+        }
+      }
+      const portControl = document.createElement('div');
+      portControl.className = 'port-control';
+      const portInput = document.createElement('input');
+      portInput.type = 'number';
+      portInput.min = '1';
+      portInput.max = '65535';
+      portInput.placeholder = 'Exit port';
+      portInput.value = proxy.exitPort || '';
+      portInput.setAttribute('aria-label', `Exit port for ${proxy.name}`);
+      portControl.append(portInput, button(proxy.exitPort ? 'Change port' : 'Set port', async () => {
+        try {
+          await api('/api/port', { method: 'POST', body: JSON.stringify({ id: proxy.id, exitPort: Number(portInput.value) }) });
+          await refresh();
+          showMessage(`Exit port for ${proxy.name} is ${portInput.value}.`);
+        } catch (error) { showMessage(error.message, true); }
+      }));
+      const relayControl = document.createElement('div');
+      relayControl.className = 'relay-control';
+      const relayInput = document.createElement('input');
+      relayInput.type = 'text';
+      relayInput.placeholder = 'localhost:10808';
+      relayInput.spellcheck = false;
+      relayInput.autocomplete = 'off';
+      relayInput.setAttribute('aria-label', `Relay for ${proxy.name}`);
+      if (proxy.relay && !proxy.relay.includes('(auth configured)')) relayInput.value = proxy.relay;
+      relayControl.append(relayInput, button('Save relay', async () => {
+        if (!relayInput.value.trim()) { showMessage('Enter a relay address, or use Remove relay.', true); return; }
+        try {
+          await api('/api/relay', { method: 'POST', body: JSON.stringify({ id: proxy.id, relay: relayInput.value }) });
+          await refresh();
+          showMessage(`Relay saved for ${proxy.name}. New connections use it.`);
+        } catch (error) { showMessage(error.message, true); }
+      }));
+      if (proxy.relay) relayControl.append(button('Remove relay', async () => {
+        try {
+          await api('/api/relay', { method: 'POST', body: JSON.stringify({ id: proxy.id, relay: '' }) });
+          await refresh();
+          showMessage(`Relay removed for ${proxy.name}.`);
+        } catch (error) { showMessage(error.message, true); }
+      }));
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const result = document.createElement('div');
+      result.className = 'test-result';
+      actions.append(button('Test exit', async event => {
+        const target = event.currentTarget;
+        target.disabled = true;
+        result.textContent = 'Testing…';
+        try {
+          const data = await api('/api/test', { method: 'POST', body: JSON.stringify({ id: proxy.id }) });
+          result.textContent = `Working · exit IP ${data.exitIP} · ${data.latencyMs} ms`;
+        } catch (error) { result.textContent = `Failed · ${error.message}`; }
+        target.disabled = false;
+      }));
+      actions.append(button('Delete', async () => {
+        if (!confirm(`Delete ${proxy.name}?`)) return;
+        try {
+          await api(`/api/proxies/${encodeURIComponent(proxy.id)}`, { method: 'DELETE' });
+          await refresh();
+          showMessage(`Deleted ${proxy.name}.`);
+        } catch (error) { showMessage(error.message, true); }
+      }, 'danger'));
+      item.append(head, detail, relayStatus, addresses, portControl, relayControl, actions, result);
+      list.append(item);
+    }
+  }
+
+  async function refresh() {
+    state = await api('/api/state');
+    render();
+  }
+
+  document.getElementById('add-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type=submit]');
+    submit.disabled = true;
+    try {
+      await api('/api/proxies', { method: 'POST', body: JSON.stringify({
+        name: document.getElementById('name').value,
+        url: document.getElementById('url').value,
+        relay: document.getElementById('relay').value,
+        exitPort: Number(document.getElementById('exit-port').value),
+      }) });
+      form.reset();
+      await refresh();
+      showMessage('Proxy added.');
+    } catch (error) { showMessage(error.message, true); }
+    submit.disabled = false;
+  });
+
+  refresh().catch(error => showMessage(error.message, true));
+</script>
+</body>
+</html>
