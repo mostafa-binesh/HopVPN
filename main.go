@@ -21,7 +21,7 @@ import (
 //go:embed index.html assets/hopport-logo.png
 var webFiles embed.FS
 
-var version = "0.1.0"
+var version = "0.1.1"
 
 type Proxy struct {
 	ID       string `json:"id"`
@@ -471,11 +471,11 @@ func (a *App) apiTest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	ip, err := testLocalExit(r.Context(), p.ExitPort)
 	if err != nil {
-		_, directErr := testProxy(r.Context(), p)
-		if directErr != nil {
-			apiError(w, 502, "local exit failed; upstream route also fails: "+probeError(directErr))
+		_, upstreamErr := testProxy(r.Context(), p)
+		if upstreamErr != nil {
+			apiError(w, 502, "local exit failed; upstream route through relay also failed: "+probeError(upstreamErr))
 		} else {
-			apiError(w, 502, "local exit failed while upstream route works: "+probeError(err))
+			apiError(w, 502, "local exit failed while upstream route through relay works: "+probeError(err))
 		}
 		return
 	}

@@ -1,3 +1,21 @@
+# HopPort v0.1.1
+
+This patch release improves failure handling when an upstream proxy or relay does not complete its tunnel handshake.
+
+## Changes
+
+- Bound HTTP CONNECT and SOCKS5 tunnel handshakes with the same cancellation-aware timeout used by the relay handshake.
+- Report stalled network handshakes as a clear timeout in the test API.
+- Clarify that the diagnostic fallback tests the upstream route through the configured relay.
+
+## Downloads
+
+Choose the archive matching your operating system and CPU. Extract it, run `run.sh` on Linux or macOS or `run.cmd` on Windows, then open `http://127.0.0.1:18080`.
+
+The archives do not contain your `proxies.json`. Keep that file private: it stores proxy credentials in plaintext.
+
+See [README.md](https://github.com/mostafa-binesh/HopVPN#readme) for setup, examples, limits, and troubleshooting. Use `SHA256SUMS` to verify downloaded archives.
+
 # HopPort v0.1.0
 
 The first public release of HopPort, a local HTTP and SOCKS5 proxy manager.

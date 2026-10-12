@@ -19,6 +19,8 @@ type bufferedConn struct {
 	reader *bufio.Reader
 }
 
+const tunnelHandshakeTimeout = 12 * time.Second
+
 func (c *bufferedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
 
 func (a *App) serveProxy(listener net.Listener, proxyID string) {
@@ -108,7 +110,9 @@ func (a *App) handleHTTPConnect(client net.Conn, clientReader *bufio.Reader, tar
 		writeProxyError(client, 400, "CONNECT target must be host:port")
 		return
 	}
-	upstream, err := dialTunnel(context.Background(), proxy, target)
+	ctx, cancel := context.WithTimeout(context.Background(), tunnelHandshakeTimeout)
+	defer cancel()
+	upstream, err := dialTunnel(ctx, proxy, target)
 	if err != nil {
 		writeProxyError(client, 502, "Upstream CONNECT failed: "+err.Error())
 		return
@@ -194,7 +198,9 @@ func (a *App) serveSOCKS5(client net.Conn, reader *bufio.Reader, proxy Proxy) {
 		return
 	}
 	target := net.JoinHostPort(host, strconv.Itoa(port))
-	upstream, err := dialTunnel(context.Background(), proxy, target)
+	ctx, cancel := context.WithTimeout(context.Background(), tunnelHandshakeTimeout)
+	defer cancel()
+	upstream, err := dialTunnel(ctx, proxy, target)
 	if err != nil {
 		socksReply(client, 1)
 		return
@@ -276,6 +282,13 @@ func probeError(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "connection timed out"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "connection timed out"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "request canceled"
 	}
 	return err.Error()
 }

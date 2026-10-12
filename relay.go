@@ -224,7 +224,7 @@ func socks5RelayConnect(ctx context.Context, conn net.Conn, relay *url.URL, targ
 }
 
 func setHandshakeDeadline(conn net.Conn, ctx context.Context) {
-	deadline := time.Now().Add(12 * time.Second)
+	deadline := time.Now().Add(tunnelHandshakeTimeout)
 	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 		deadline = contextDeadline
 	}
